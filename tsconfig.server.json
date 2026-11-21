@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "ES2019",
+    "outDir": "./dist/server",
+    "noEmit": false,
+    "jsx": "react",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true,
+    "strict": true
+  },
+  "include": ["server/**/*.ts"],
+  "exclude": ["node_modules"]
+}
