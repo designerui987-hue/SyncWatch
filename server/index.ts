@@ -54,7 +54,7 @@ app.prepare().then(() => {
     socket.data = {
       userId: verified.id,
       displayName: verified.displayName || "Participant",
-      avatarUrl: verified.avatarUrl,
+      avatarUrl: verified.avatarUrl ?? null,
     };
 
     nextMiddleware();
