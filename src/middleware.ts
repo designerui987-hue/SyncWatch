@@ -3,15 +3,20 @@ import { updateSession } from "@/lib/supabase/middleware";
 import { createServerClient } from "@supabase/ssr";
 
 export async function middleware(request: NextRequest): Promise<NextResponse> {
-  // Always refresh the session so cookies stay fresh.
   const response = await updateSession(request);
 
-  // Protect /room/* routes – require an authenticated session.
+  // Protect /room/* routes – require an authenticated session or demo user cookie
   if (request.nextUrl.pathname.startsWith("/room/")) {
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
+    const demoUser = request.cookies.get("syncwatch_user")?.value;
+    if (demoUser) {
+      return response;
+    }
+
+    try {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://localhost:54321";
+      const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "dummy-anon-key";
+
+      const supabase = createServerClient(url, anonKey, {
         cookies: {
           get(name: string) {
             return request.cookies.get(name)?.value;
@@ -19,14 +24,15 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
           set() {},
           remove() {},
         },
+      });
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        const redirectUrl = new URL("/auth", request.url);
+        redirectUrl.searchParams.set("redirectTo", request.nextUrl.pathname);
+        return NextResponse.redirect(redirectUrl);
       }
-    );
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) {
+    } catch {
       const redirectUrl = new URL("/auth", request.url);
       redirectUrl.searchParams.set("redirectTo", request.nextUrl.pathname);
       return NextResponse.redirect(redirectUrl);

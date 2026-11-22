@@ -49,18 +49,25 @@ export default function LandingPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      setIsAuthenticated(!!data.user);
-      setLoading(false);
-    });
+    try {
+      const supabase = createClient();
+      supabase.auth.getUser().then(({ data }) => {
+        if (data?.user) setIsAuthenticated(true);
+      }).catch(() => {});
+    } catch {}
+
+    if (document.cookie.includes("syncwatch_user=")) {
+      setIsAuthenticated(true);
+    }
+    setLoading(false);
   }, []);
 
   const handleCreateRoom = () => {
+    const roomId = Math.random().toString(36).substring(2, 10);
     if (isAuthenticated) {
-      router.push("/dashboard");
+      router.push(`/room/${roomId}`);
     } else {
-      router.push("/auth?redirectTo=/dashboard");
+      router.push(`/auth?redirectTo=/room/${roomId}`);
     }
   };
 

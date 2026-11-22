@@ -1,7 +1,11 @@
+"use client";
+
 import React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Users, LogOut, Film } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
 
 interface NavbarProps {
   roomTitle?: string;
@@ -16,6 +20,24 @@ export const Navbar: React.FC<NavbarProps> = ({
   onToggleMembers,
   onlineCount = 0,
 }) => {
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    // Clear demo cookie and storage
+    document.cookie = "syncwatch_user=; path=/; max-age=0";
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("syncwatch_user");
+    }
+
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch {}
+
+    router.push("/auth");
+    router.refresh();
+  };
+
   return (
     <header className="h-14 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur px-4 flex items-center justify-between z-40">
       <div className="flex items-center space-x-3">
@@ -47,9 +69,14 @@ export const Navbar: React.FC<NavbarProps> = ({
         {userEmail ? (
           <div className="flex items-center space-x-3 text-xs text-zinc-400">
             <span className="hidden md:inline truncate max-w-[140px]">{userEmail}</span>
-            <Link href="/auth" className="text-zinc-400 hover:text-red-400 transition-colors" title="Switch account">
+            <button
+              onClick={handleSignOut}
+              className="text-zinc-400 hover:text-red-400 transition-colors p-1"
+              title="Sign out"
+              aria-label="Sign out"
+            >
               <LogOut className="w-4 h-4" />
-            </Link>
+            </button>
           </div>
         ) : (
           <Link href="/auth">
