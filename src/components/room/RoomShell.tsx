@@ -6,11 +6,14 @@ import { PlayerPanel } from "@/components/room/PlayerPanel";
 import { ChatPanel } from "@/components/room/ChatPanel";
 import { MemberList } from "@/components/room/MemberList";
 import { InviteDialog } from "@/components/room/InviteDialog";
+import { CompanionModeNotice } from "@/components/room/CompanionModeNotice";
+import { LicensedContentBadge } from "@/components/room/LicensedContentBadge";
+import { AccessWizard } from "@/components/wizard/AccessWizard";
 import { useSocket } from "@/hooks/useSocket";
 import { usePlayback } from "@/hooks/usePlayback";
 import { useRoom } from "@/hooks/useRoom";
 import { useChat } from "@/hooks/useChat";
-import { Share2, Video, AlertCircle } from "lucide-react";
+import { Share2, Video, AlertCircle, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import type { Room, RoomMember, UserRole, VideoProvider } from "@/types";
@@ -36,6 +39,7 @@ export const RoomShell: React.FC<RoomShellProps> = ({
   const { toast } = useToast();
   const [showMembers, setShowMembers] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showAccessWizard, setShowAccessWizard] = useState(false);
   const [urlInput, setUrlInput] = useState("");
   const [showUrlModal, setShowUrlModal] = useState(false);
 
@@ -198,6 +202,12 @@ export const RoomShell: React.FC<RoomShellProps> = ({
         onlineCount={members.length}
       />
 
+      {/* Cross-device / PWA companion status banner */}
+      <CompanionModeNotice
+        provider={provider}
+        onOpenWizard={() => setShowAccessWizard(true)}
+      />
+
       {/* Main room content */}
       <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
         <main className="flex-1 flex flex-col p-3 sm:p-4 gap-3 overflow-y-auto">
@@ -220,9 +230,21 @@ export const RoomShell: React.FC<RoomShellProps> = ({
                   ? "Reconnecting…"
                   : connectionStatus}
               </span>
+
+              {room.license && <LicensedContentBadge license={room.license} />}
             </div>
 
             <div className="flex items-center space-x-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowAccessWizard(true)}
+                className="text-xs h-8 border-indigo-700/50 bg-indigo-950/40 text-indigo-300 hover:bg-indigo-900/40"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 mr-1 text-indigo-400" />
+                Access Wizard
+              </Button>
+
               {canControl && (
                 <Button
                   size="sm"
@@ -328,6 +350,23 @@ export const RoomShell: React.FC<RoomShellProps> = ({
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {/* Watch Party Access Wizard Modal */}
+      {showAccessWizard && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <AccessWizard
+            initialProvider={provider}
+            onClose={() => setShowAccessWizard(false)}
+            onSelectOption={(p) => {
+              setProvider(p);
+              setShowAccessWizard(false);
+              toast({
+                title: "Setup Selected",
+                description: `Room configured for ${p}. Follow the recommended provider steps.`,
+              });
+            }}
+          />
         </div>
       )}
     </div>

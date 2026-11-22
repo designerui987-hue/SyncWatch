@@ -4,10 +4,11 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { PlaybackControls } from "./PlaybackControls";
 import { Tv, AlertCircle, VolumeX, WifiOff, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import type { VideoProvider } from "@/types";
 
 interface PlayerPanelProps {
   videoUrl: string | null;
-  provider: "youtube" | "html5";
+  provider: VideoProvider;
   isPlaying: boolean;
   currentTime: number;
   canControl: boolean;

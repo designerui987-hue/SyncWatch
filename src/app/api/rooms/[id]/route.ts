@@ -7,6 +7,17 @@ interface Params {
   params: { id: string };
 }
 
+function normalizeProvider(vType?: string) {
+  if (vType === "direct") return "html5";
+  if (
+    vType &&
+    ["youtube", "html5", "licensed_upload", "netflix", "jiohotstar", "prime_video"].includes(vType)
+  ) {
+    return vType as any;
+  }
+  return "youtube";
+}
+
 // ─── GET /api/rooms/[id] ──────────────────────────────────────────────────────
 
 export async function GET(
@@ -42,7 +53,7 @@ export async function GET(
     room: {
       ...room,
       visibility: room.is_private ? "private" : "public",
-      provider: room.video_type === "youtube" ? "youtube" : "html5",
+      provider: normalizeProvider(room.video_type),
     },
   });
 }
@@ -128,7 +139,7 @@ export async function PATCH(
     room: {
       ...updated,
       visibility: updated.is_private ? "private" : "public",
-      provider: updated.video_type === "youtube" ? "youtube" : "html5",
+      provider: normalizeProvider(updated.video_type),
     },
   });
 }

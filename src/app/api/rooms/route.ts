@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { z } from "zod";
 import { nanoid } from "nanoid";
+import { licenseDeclarationSchema } from "@/lib/licensing/types";
 import type { CreateRoomResponse, ApiError } from "@/types";
 
 const createRoomSchema = z.object({
@@ -9,7 +10,10 @@ const createRoomSchema = z.object({
   description: z.string().max(500).optional(),
   visibility: z.enum(["public", "private"]).default("public"),
   videoUrl: z.string().url().optional().or(z.literal("")),
-  provider: z.enum(["youtube", "html5"]).default("youtube"),
+  provider: z
+    .enum(["youtube", "html5", "licensed_upload", "netflix", "jiohotstar", "prime_video"])
+    .default("youtube"),
+  license: licenseDeclarationSchema.optional().nullable(),
 });
 
 // In-memory token bucket rate limiter: max 5 room creations per user per hour

@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "SyncWatch Companion",
+  "version": "1.0.0",
+  "description": "Authorized cross-tab playback synchronization for SyncWatch watch parties.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "http://127.0.0.1:3000/*",
+    "https://*.syncwatch.party/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "SyncWatch Companion"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost:3000/*",
+        "http://127.0.0.1:3000/*",
+        "https://*.syncwatch.party/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

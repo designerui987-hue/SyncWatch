@@ -1,5 +1,8 @@
+import type { LicenseDeclaration } from "@/lib/licensing/types";
+import type { ProviderId } from "@/lib/providers/types";
+
 export type UserRole = "host" | "co-host" | "viewer";
-export type VideoProvider = "youtube" | "html5";
+export type VideoProvider = ProviderId;
 export type RoomVisibility = "public" | "private";
 export type PlaybackStatus = "playing" | "paused" | "buffering" | "ended";
 
@@ -16,6 +19,7 @@ export interface Room {
   video_url: string | null;
   video_type?: string;
   provider: VideoProvider;
+  license?: LicenseDeclaration | null;
   max_members?: number;
   created_at: string;
   updated_at: string;
@@ -163,7 +167,7 @@ export interface ApiError {
 
 declare global {
   interface Window {
-    YT: any;
-    onYouTubeIframeAPIReady: (() => void) | undefined;
+    YT?: any;
+    onYouTubeIframeAPIReady?: (() => void) | undefined;
   }
 }

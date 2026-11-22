@@ -20,8 +20,10 @@ import {
   Loader2,
   X,
   Lock,
+  ShieldCheck,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { AccessWizard } from "@/components/wizard/AccessWizard";
 
 const features = [
   {
@@ -66,6 +68,7 @@ function LandingContent() {
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [roomName, setRoomName] = useState("");
   const [visibility, setVisibility] = useState<"public" | "private">("private");
@@ -187,6 +190,15 @@ function LandingContent() {
                   <Play className="h-5 w-5 fill-current" />
                   Create a Watch Room
                   <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => setShowWizard(true)}
+                  className="border-indigo-500/40 text-indigo-300 hover:bg-indigo-950/40 gap-2"
+                >
+                  <ShieldCheck className="h-5 w-5 text-indigo-400" />
+                  Access & Pricing Wizard
                 </Button>
                 {!isAuthenticated && (
                   <Button size="lg" variant="outline" className="border-zinc-800 hover:bg-zinc-900" asChild>
@@ -342,6 +354,19 @@ function LandingContent() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Access Wizard Modal */}
+      {showWizard && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <AccessWizard
+            onClose={() => setShowWizard(false)}
+            onSelectOption={(chosenProvider) => {
+              setShowWizard(false);
+              setShowModal(true);
+            }}
+          />
         </div>
       )}
 

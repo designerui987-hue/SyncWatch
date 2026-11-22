@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SyncWatch Companion</title>
+  <style>
+    body {
+      width: 280px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: #111827;
+      color: #f3f4f6;
+    }
+    h1 {
+      font-size: 14px;
+      margin: 0 0 8px 0;
+      color: #818cf8;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: bold;
+    }
+    .badge-connected { background: #065f46; color: #34d399; }
+    .badge-idle { background: #374151; color: #9ca3af; }
+    .status-box {
+      background: #1f2937;
+      border-radius: 8px;
+      padding: 10px;
+      font-size: 12px;
+      margin-top: 10px;
+      line-height: 1.4;
+    }
+    .legal-notice {
+      margin-top: 12px;
+      font-size: 10px;
+      color: #9ca3af;
+      border-top: 1px solid #374151;
+      padding-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <h1>SyncWatch Companion</h1>
+  <div id="status-badge" class="badge badge-idle">Standby</div>
+
+  <div class="status-box">
+    <div><strong>Active Room:</strong> <span id="room-id">None</span></div>
+    <div style="margin-top: 4px;"><strong>Sync Mode:</strong> Authorized Web Player</div>
+  </div>
+
+  <div class="legal-notice">
+    <strong>Zero-DRM Disclaimer:</strong> SyncWatch never intercepts protected media streams or credentials. Works exclusively via authorized DOM player events.
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
