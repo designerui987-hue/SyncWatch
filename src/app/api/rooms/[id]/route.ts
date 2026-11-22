@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { z } from "zod";
+import { updateRoomSchema } from "@/lib/validations/room";
 import type { ApiError } from "@/types";
 
 interface Params {
@@ -38,18 +38,16 @@ export async function GET(
     );
   }
 
-  return NextResponse.json({ room });
+  return NextResponse.json({
+    room: {
+      ...room,
+      visibility: room.is_private ? "private" : "public",
+      provider: room.video_type === "youtube" ? "youtube" : "html5",
+    },
+  });
 }
 
 // ─── PATCH /api/rooms/[id] ────────────────────────────────────────────────────
-
-const updateRoomSchema = z.object({
-  name: z.string().min(1).max(80).optional(),
-  description: z.string().max(500).optional(),
-  visibility: z.enum(["public", "private"]).optional(),
-  videoUrl: z.string().url().optional().or(z.literal("")).optional(),
-  provider: z.enum(["youtube", "html5"]).optional(),
-});
 
 export async function PATCH(
   request: NextRequest,
@@ -66,14 +64,18 @@ export async function PATCH(
     return NextResponse.json({ error: "Unauthorized" } satisfies ApiError, { status: 401 });
   }
 
-  const { data: room } = await supabase
+  // Verify caller is room host
+  const { data: room, error: roomError } = await supabase
     .from("rooms")
     .select("host_id")
     .eq("id", params.id)
     .single();
 
-  if (!room || room.host_id !== user.id) {
-    return NextResponse.json({ error: "Forbidden" } satisfies ApiError, { status: 403 });
+  if (roomError || !room || room.host_id !== user.id) {
+    return NextResponse.json(
+      { error: "Forbidden: Only the room host can modify room settings" } satisfies ApiError,
+      { status: 403 }
+    );
   }
 
   let body: unknown;
@@ -94,9 +96,19 @@ export async function PATCH(
   const updateData: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (parsed.data.name !== undefined) updateData.name = parsed.data.name;
   if (parsed.data.description !== undefined) updateData.description = parsed.data.description;
-  if (parsed.data.visibility !== undefined) updateData.visibility = parsed.data.visibility;
   if (parsed.data.videoUrl !== undefined) updateData.video_url = parsed.data.videoUrl || null;
-  if (parsed.data.provider !== undefined) updateData.provider = parsed.data.provider;
+
+  // IMPORTANT: visibility is a database-generated column from is_private.
+  // We MUST update is_private, and NEVER attempt writing to visibility directly.
+  if (parsed.data.visibility !== undefined) {
+    updateData.is_private = parsed.data.visibility === "private";
+  }
+
+  // Normalize provider to database column video_type ('youtube' | 'direct')
+  if (parsed.data.provider !== undefined) {
+    updateData.video_type = parsed.data.provider === "youtube" ? "youtube" : "direct";
+    updateData.provider = parsed.data.provider;
+  }
 
   const { data: updated, error: updateError } = await supabase
     .from("rooms")
@@ -105,12 +117,18 @@ export async function PATCH(
     .select()
     .single();
 
-  if (updateError) {
+  if (updateError || !updated) {
     return NextResponse.json(
-      { error: "Failed to update room" } satisfies ApiError,
+      { error: "Failed to update room", details: updateError?.message } satisfies ApiError,
       { status: 500 }
     );
   }
 
-  return NextResponse.json({ room: updated });
+  return NextResponse.json({
+    room: {
+      ...updated,
+      visibility: updated.is_private ? "private" : "public",
+      provider: updated.video_type === "youtube" ? "youtube" : "html5",
+    },
+  });
 }

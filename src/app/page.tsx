@@ -1,13 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Navbar } from "@/components/layout/Navbar";
-import { Play, Users, Zap, Shield, Globe, ChevronRight } from "lucide-react";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  Play,
+  Users,
+  Zap,
+  Shield,
+  Globe,
+  ChevronRight,
+  Loader2,
+  X,
+  Lock,
+} from "lucide-react";
 import { motion } from "framer-motion";
 
 const features = [
@@ -43,36 +56,94 @@ const features = [
   },
 ];
 
-export default function LandingPage() {
+function LandingContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { toast } = useToast();
+
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Modal State
+  const [showModal, setShowModal] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [roomName, setRoomName] = useState("");
+  const [visibility, setVisibility] = useState<"public" | "private">("private");
+  const [videoUrl, setVideoUrl] = useState("");
+
   useEffect(() => {
-    try {
-      const supabase = createClient();
-      supabase.auth.getUser().then(({ data }) => {
-        if (data?.user) setIsAuthenticated(true);
-      }).catch(() => {});
-    } catch {}
-
-    if (document.cookie.includes("syncwatch_user=")) {
-      setIsAuthenticated(true);
+    async function checkAuth() {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setIsAuthenticated(true);
+          setRoomName(`${user.user_metadata?.display_name || user.email?.split("@")[0] || "Party"}'s Room`);
+          if (searchParams.get("create") === "true") {
+            setShowModal(true);
+          }
+        }
+      } catch {}
+      setLoading(false);
     }
-    setLoading(false);
-  }, []);
+    checkAuth();
+  }, [searchParams]);
 
-  const handleCreateRoom = () => {
-    const roomId = Math.random().toString(36).substring(2, 10);
-    if (isAuthenticated) {
-      router.push(`/room/${roomId}`);
-    } else {
-      router.push(`/auth?redirectTo=/room/${roomId}`);
+  const handleStartCreate = () => {
+    if (!isAuthenticated) {
+      router.push("/auth?redirectTo=/?create=true");
+      return;
+    }
+    setShowModal(true);
+  };
+
+  const handleCreateRoomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!roomName.trim()) return;
+
+    setIsCreating(true);
+
+    try {
+      const provider =
+        videoUrl.includes("youtube.com") || videoUrl.includes("youtu.be")
+          ? "youtube"
+          : "html5";
+
+      const res = await fetch("/api/rooms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: roomName.trim(),
+          visibility,
+          videoUrl: videoUrl.trim() || undefined,
+          provider,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.room?.id) {
+        throw new Error(data.error || "Failed to create watch room");
+      }
+
+      toast({
+        title: "Room Created!",
+        description: `Entering ${data.room.name}…`,
+      });
+
+      router.push(`/room/${data.room.id}`);
+    } catch (err: any) {
+      setIsCreating(false);
+      toast({
+        variant: "destructive",
+        title: "Error Creating Room",
+        description: err.message || "An unexpected error occurred.",
+      });
     }
   };
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-zinc-950 text-zinc-100">
       <Navbar />
 
       <main className="flex-1">
@@ -91,108 +162,202 @@ export default function LandingPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm">
-                <Zap className="mr-1.5 h-3.5 w-3.5" />
+              <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm bg-zinc-800 text-zinc-200 border-zinc-700">
+                <Zap className="mr-1.5 h-3.5 w-3.5 text-violet-400" />
                 Real-time sync &lt; 1 second
               </Badge>
 
               <h1 className="text-4xl font-extrabold tracking-tight sm:text-6xl lg:text-7xl mb-6">
                 Watch Together,{" "}
-                <span className="text-primary">In Perfect Sync</span>
+                <span className="text-violet-400">In Perfect Sync</span>
               </h1>
 
-              <p className="max-w-2xl mx-auto text-lg text-muted-foreground mb-10">
-                SyncWatch keeps your whole group perfectly synchronized — pause, seek, and play
-                together in real time. YouTube, HTML5, and beyond.
+              <p className="max-w-2xl mx-auto text-lg text-zinc-400 mb-10">
+                SyncWatch keeps your whole party perfectly synchronized — pause, seek, and play
+                together in real time with server-authoritative timestamps.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button
                   size="lg"
-                  onClick={handleCreateRoom}
+                  onClick={handleStartCreate}
                   disabled={loading}
-                  className="gap-2"
+                  className="gap-2 bg-violet-600 hover:bg-violet-500 text-white shadow-lg"
                 >
-                  <Play className="h-5 w-5" />
+                  <Play className="h-5 w-5 fill-current" />
                   Create a Watch Room
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-                <Button size="lg" variant="outline" asChild>
-                  <Link href="/auth">Sign in</Link>
-                </Button>
+                {!isAuthenticated && (
+                  <Button size="lg" variant="outline" className="border-zinc-800 hover:bg-zinc-900" asChild>
+                    <Link href="/auth">Sign in</Link>
+                  </Button>
+                )}
               </div>
             </motion.div>
           </div>
         </section>
 
         {/* Features */}
-        <section className="py-20 border-t border-border/40">
+        <section className="py-20 border-t border-zinc-800/60">
           <div className="container mx-auto px-4">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-              className="text-center mb-14"
-            >
+            <div className="text-center mb-14">
               <h2 className="text-3xl font-bold tracking-tight mb-4">
                 Everything you need for a great watch party
               </h2>
-              <p className="text-muted-foreground max-w-xl mx-auto">
-                Built on modern tech for reliability, speed, and a seamless experience.
+              <p className="text-zinc-400 max-w-xl mx-auto text-sm">
+                Built on server-authoritative Socket.IO clocks and cryptographic invitations.
               </p>
-            </motion.div>
+            </div>
 
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {features.map((feature, i) => (
-                <motion.div
+              {features.map((feature) => (
+                <div
                   key={feature.title}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  viewport={{ once: true }}
-                  transition={{ duration: 0.4, delay: i * 0.08 }}
-                  className="rounded-xl border border-border bg-card p-6 hover:border-primary/40 transition-colors"
+                  className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-6 hover:border-violet-500/40 transition-colors"
                 >
-                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                    <feature.icon className="h-5 w-5 text-primary" />
+                  <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10 text-violet-400">
+                    <feature.icon className="h-5 w-5" />
                   </div>
-                  <h3 className="font-semibold mb-2">{feature.title}</h3>
-                  <p className="text-sm text-muted-foreground">{feature.description}</p>
-                </motion.div>
+                  <h3 className="font-semibold mb-2 text-zinc-100">{feature.title}</h3>
+                  <p className="text-xs text-zinc-400 leading-relaxed">{feature.description}</p>
+                </div>
               ))}
             </div>
           </div>
         </section>
-
-        {/* CTA */}
-        <section className="py-20 border-t border-border/40">
-          <div className="container mx-auto px-4 text-center">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ duration: 0.5 }}
-            >
-              <h2 className="text-3xl font-bold tracking-tight mb-4">
-                Ready to watch together?
-              </h2>
-              <p className="text-muted-foreground mb-8 max-w-md mx-auto">
-                Sign up for free and create your first watch room in seconds.
-              </p>
-              <Button size="lg" onClick={handleCreateRoom} className="gap-2">
-                Get started — it&apos;s free
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </motion.div>
-          </div>
-        </section>
       </main>
 
-      <footer className="border-t border-border/40 py-8">
-        <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          © {new Date().getFullYear()} SyncWatch. Built with Next.js &amp; Socket.IO.
+      {/* Create Room Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 max-w-md w-full shadow-2xl relative text-zinc-100">
+            <button
+              onClick={() => setShowModal(false)}
+              className="absolute top-4 right-4 text-zinc-400 hover:text-zinc-200"
+              disabled={isCreating}
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <h3 className="text-lg font-bold mb-1">Create Watch Party Room</h3>
+            <p className="text-xs text-zinc-400 mb-5">
+              Configure your room. A unique shareable room will be generated.
+            </p>
+
+            <form onSubmit={handleCreateRoomSubmit} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="room-name" className="text-xs text-zinc-300">
+                  Room Name
+                </Label>
+                <Input
+                  id="room-name"
+                  required
+                  placeholder="Friday Movie Night"
+                  value={roomName}
+                  onChange={(e) => setRoomName(e.target.value)}
+                  className="bg-zinc-950 border-zinc-800 text-xs text-zinc-100"
+                  disabled={isCreating}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="video-url" className="text-xs text-zinc-300">
+                  Initial Video URL (Optional)
+                </Label>
+                <Input
+                  id="video-url"
+                  type="url"
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  value={videoUrl}
+                  onChange={(e) => setVideoUrl(e.target.value)}
+                  className="bg-zinc-950 border-zinc-800 text-xs text-zinc-100"
+                  disabled={isCreating}
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-zinc-300">Privacy &amp; Access</Label>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setVisibility("private")}
+                    className={`flex items-center space-x-2 p-2.5 rounded-lg border text-xs text-left transition-all ${
+                      visibility === "private"
+                        ? "border-violet-500 bg-violet-500/10 text-violet-300 font-semibold"
+                        : "border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700"
+                    }`}
+                  >
+                    <Lock className="w-3.5 h-3.5 shrink-0" />
+                    <div>
+                      <div>Private</div>
+                      <div className="text-[10px] font-normal text-zinc-500">Requires invite token</div>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setVisibility("public")}
+                    className={`flex items-center space-x-2 p-2.5 rounded-lg border text-xs text-left transition-all ${
+                      visibility === "public"
+                        ? "border-violet-500 bg-violet-500/10 text-violet-300 font-semibold"
+                        : "border-zinc-800 bg-zinc-950 text-zinc-400 hover:border-zinc-700"
+                    }`}
+                  >
+                    <Globe className="w-3.5 h-3.5 shrink-0" />
+                    <div>
+                      <div>Public</div>
+                      <div className="text-[10px] font-normal text-zinc-500">Anyone with link joins</div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowModal(false)}
+                  disabled={isCreating}
+                  className="text-xs text-zinc-400 hover:text-zinc-200"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={isCreating || !roomName.trim()}
+                  className="bg-violet-600 hover:bg-violet-500 text-white text-xs gap-1.5"
+                >
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Creating…
+                    </>
+                  ) : (
+                    "Create Room"
+                  )}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      <footer className="border-t border-zinc-800/40 py-8">
+        <div className="container mx-auto px-4 text-center text-xs text-zinc-500">
+          © {new Date().getFullYear()} SyncWatch. Production-oriented open-source watch parties.
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-zinc-950" />}>
+      <LandingContent />
+    </Suspense>
   );
 }

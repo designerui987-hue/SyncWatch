@@ -14,6 +14,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
+import { safeRedirectUrl } from "@/lib/auth-redirect";
 import { Loader2, Mail, Play, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 
@@ -21,7 +22,7 @@ function AuthForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const redirectTo = searchParams.get("redirectTo") ?? "/";
+  const redirectTo = safeRedirectUrl(searchParams.get("redirectTo"));
 
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
