@@ -288,6 +288,7 @@ export const RoomShell: React.FC<RoomShellProps> = ({
         onClose={() => setShowInviteModal(false)}
         inviteToken={room.invite_token}
         roomId={room.id}
+        isHostOrCoHost={canControl}
       />
 
       {/* Load Video Modal */}

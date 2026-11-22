@@ -63,7 +63,7 @@ export async function POST(
     );
   }
 
-  const { name, visibility, videoUrl, provider } = parsed.data;
+  const { name, description, visibility, videoUrl, provider } = parsed.data;
   const isPrivate = visibility === "private";
   const videoType = provider === "youtube" ? "youtube" : "direct";
 
@@ -72,6 +72,7 @@ export async function POST(
     .from("rooms")
     .insert({
       name,
+      description: description || null,
       host_id: user.id,
       is_private: isPrivate,
       video_url: videoUrl || null,
@@ -81,11 +82,14 @@ export async function POST(
     .single();
 
   if (insertError || !room) {
-    return NextResponse.json({ error: "Failed to create room" }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to create room", details: insertError?.message },
+      { status: 500 }
+    );
   }
 
-  // 2. Insert host into room_members
-  await supabase.from("room_members").upsert(
+  // 2. Insert host into room_members (atomic trigger handles this, but upsert ensures client verification)
+  const { error: memberError } = await supabase.from("room_members").upsert(
     {
       room_id: room.id,
       user_id: user.id,
@@ -94,15 +98,29 @@ export async function POST(
     { onConflict: "room_id,user_id" }
   );
 
-  // 3. Create initial invite token if private room
+  if (memberError) {
+    // If host membership failed, clean up the orphaned room to avoid inconsistent state
+    await supabase.from("rooms").delete().eq("id", room.id);
+    return NextResponse.json(
+      { error: "Failed to establish host membership", details: memberError.message },
+      { status: 500 }
+    );
+  }
+
+  // 3. Create initial invite token in invite_tokens table
   const token = nanoid(24);
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-  await supabase.from("invite_tokens").insert({
+  const { error: tokenError } = await supabase.from("invite_tokens").insert({
     room_id: room.id,
     token,
     created_by: user.id,
     expires_at: expiresAt,
   });
+
+  if (tokenError) {
+    // Token generation failure is logged, but room is already functional
+    console.error("Warning: Initial invite token creation failed:", tokenError);
+  }
 
   return NextResponse.json(
     {
@@ -110,7 +128,7 @@ export async function POST(
         ...room,
         visibility: isPrivate ? "private" : "public",
         provider: videoType === "youtube" ? "youtube" : "html5",
-        invite_token: token,
+        invite_token: tokenError ? null : token,
       },
     },
     { status: 201 }
