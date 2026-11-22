@@ -39,26 +39,64 @@ export default function InvitePage({ params }: InvitePageProps) {
 
       setStatus("joining");
 
-      const { data: room, error: roomError } = await supabase
-        .from("rooms")
-        .select("id, name")
-        .eq("invite_token", params.token)
+      // 1. Attempt redemption via secure stored procedure
+      const { data: rpcData, error: rpcError } = await supabase.rpc("redeem_invite_token", {
+        p_token: params.token,
+      });
+
+      if (!rpcError && rpcData && rpcData.length > 0) {
+        const result = rpcData[0];
+        if (result.status === "success" || result.status === "already_member") {
+          router.replace(`/room/${result.room_id}`);
+          return;
+        } else if (result.status === "expired_token") {
+          setStatus("error");
+          setErrorMsg("This invitation link has expired.");
+          return;
+        } else if (result.status === "max_uses_reached") {
+          setStatus("error");
+          setErrorMsg("This invitation link has reached its maximum number of uses.");
+          return;
+        } else if (result.status === "room_full") {
+          setStatus("error");
+          setErrorMsg("This watch room is currently at maximum capacity.");
+          return;
+        }
+      }
+
+      // 2. Fallback direct verification against invite_tokens table
+      const { data: tokenRecord, error: tokenError } = await supabase
+        .from("invite_tokens")
+        .select("room_id, expires_at, max_uses, uses")
+        .eq("token", params.token)
         .single();
 
-      if (roomError || !room) {
+      if (tokenError || !tokenRecord) {
         setStatus("error");
         setErrorMsg("This invite link is invalid or has expired.");
         return;
       }
 
+      // Check expiry
+      if (new Date(tokenRecord.expires_at) <= new Date()) {
+        setStatus("error");
+        setErrorMsg("This invite link has expired.");
+        return;
+      }
+
+      // Check max uses
+      if (tokenRecord.max_uses !== null && tokenRecord.uses >= tokenRecord.max_uses) {
+        setStatus("error");
+        setErrorMsg("This invite link has reached its maximum uses.");
+        return;
+      }
+
+      // Insert member with viewer role
       const { error: memberError } = await supabase.from("room_members").upsert(
         {
-          room_id: room.id,
+          room_id: tokenRecord.room_id,
           user_id: user.id,
           role: "viewer",
-          display_name:
-            user.user_metadata?.display_name ?? user.email ?? "Viewer",
-          avatar_url: user.user_metadata?.avatar_url ?? null,
         },
         { onConflict: "room_id,user_id", ignoreDuplicates: true }
       );
@@ -69,7 +107,7 @@ export default function InvitePage({ params }: InvitePageProps) {
         return;
       }
 
-      router.replace(`/room/${room.id}`);
+      router.replace(`/room/${tokenRecord.room_id}`);
     }
 
     acceptInvite();
@@ -77,16 +115,18 @@ export default function InvitePage({ params }: InvitePageProps) {
 
   if (status === "unauthenticated") {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-sm">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-zinc-950 text-zinc-100">
+        <Card className="w-full max-w-sm bg-zinc-900 border-zinc-800 text-zinc-100">
           <CardHeader className="text-center">
-            <Users className="mx-auto h-10 w-10 text-primary mb-2" />
-            <CardTitle>Sign in to join</CardTitle>
-            <CardDescription>You need an account to accept this invite.</CardDescription>
+            <Users className="mx-auto h-10 w-10 text-violet-400 mb-2" />
+            <CardTitle className="text-lg">Sign in to Join Watch Party</CardTitle>
+            <CardDescription className="text-zinc-400 text-xs">
+              An account is required to verify your invite and participate.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button className="w-full" asChild>
-              <Link href={`/auth?redirectTo=/invite/${params.token}`}>Sign in</Link>
+            <Button className="w-full bg-violet-600 hover:bg-violet-500 text-white text-xs h-9" asChild>
+              <Link href={`/auth?redirectTo=/invite/${params.token}`}>Sign In to Accept</Link>
             </Button>
           </CardContent>
         </Card>
@@ -96,16 +136,16 @@ export default function InvitePage({ params }: InvitePageProps) {
 
   if (status === "error") {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <Card className="w-full max-w-sm">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-zinc-950 text-zinc-100">
+        <Card className="w-full max-w-sm bg-zinc-900 border-zinc-800 text-zinc-100">
           <CardHeader className="text-center">
-            <AlertCircle className="mx-auto h-10 w-10 text-destructive mb-2" />
-            <CardTitle>Invite error</CardTitle>
-            <CardDescription>{errorMsg}</CardDescription>
+            <AlertCircle className="mx-auto h-10 w-10 text-red-400 mb-2" />
+            <CardTitle className="text-lg">Invitation Error</CardTitle>
+            <CardDescription className="text-zinc-400 text-xs">{errorMsg}</CardDescription>
           </CardHeader>
-          <CardContent>
-            <Button variant="outline" className="w-full" asChild>
-              <Link href="/">Go home</Link>
+          <CardContent className="space-y-2">
+            <Button variant="outline" className="w-full text-xs border-zinc-700 hover:bg-zinc-800" asChild>
+              <Link href="/">Back to Home</Link>
             </Button>
           </CardContent>
         </Card>
@@ -114,12 +154,10 @@ export default function InvitePage({ params }: InvitePageProps) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center">
-      <div className="text-center space-y-4">
-        <Loader2 className="h-10 w-10 animate-spin text-primary mx-auto" />
-        <p className="text-muted-foreground">
-          {status === "joining" ? "Joining room…" : "Loading…"}
-        </p>
+    <div className="min-h-screen flex flex-col items-center justify-center p-4 bg-zinc-950 text-zinc-100">
+      <div className="flex flex-col items-center space-y-3">
+        <Loader2 className="w-8 h-8 text-violet-500 animate-spin" />
+        <p className="text-xs text-zinc-400">Verifying invitation and connecting to watch party…</p>
       </div>
     </div>
   );

@@ -17,15 +17,26 @@ export interface VerifiedUser {
   avatarUrl?: string | null;
 }
 
+/**
+ * Verifies a Supabase JWT access token server-side using the Supabase Admin client.
+ * Returns null if the token is invalid, expired, or verification fails.
+ * No production fallbacks or arbitrary demo tokens are accepted.
+ */
 export async function verifyUserToken(token: string): Promise<VerifiedUser | null> {
-  if (!token) return null;
+  if (!token || typeof token !== "string" || token.trim() === "") {
+    return null;
+  }
 
-  // Support local demo users
-  if (token.startsWith("usr_") || token.startsWith("demo_") || token.includes("demo")) {
+  // Strict testing fixture only (never enabled in production)
+  if (
+    process.env.NODE_ENV === "test" &&
+    token.startsWith("test-fixture-token-")
+  ) {
+    const id = token.replace("test-fixture-token-", "");
     return {
-      id: token,
-      email: `${token}@syncwatch.local`,
-      displayName: token.startsWith("usr_") ? `Watcher ${token.slice(4, 8)}` : "Demo Participant",
+      id,
+      email: `${id}@test.fixture`,
+      displayName: `Test User ${id.slice(0, 6)}`,
       avatarUrl: null,
     };
   }
@@ -33,27 +44,20 @@ export async function verifyUserToken(token: string): Promise<VerifiedUser | nul
   try {
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) {
-      // Fallback for local testing if Supabase is offline
-      return {
-        id: token,
-        email: `${token.slice(0, 8)}@syncwatch.local`,
-        displayName: "Participant",
-        avatarUrl: null,
-      };
+      return null;
     }
 
     return {
       id: user.id,
       email: user.email,
-      displayName: (user.user_metadata?.display_name as string) || user.email || "Viewer",
+      displayName:
+        (user.user_metadata?.display_name as string) ||
+        (user.user_metadata?.full_name as string) ||
+        user.email?.split("@")[0] ||
+        "Participant",
       avatarUrl: (user.user_metadata?.avatar_url as string) || null,
     };
   } catch {
-    return {
-      id: token,
-      email: `${token.slice(0, 8)}@syncwatch.local`,
-      displayName: "Participant",
-      avatarUrl: null,
-    };
+    return null;
   }
 }

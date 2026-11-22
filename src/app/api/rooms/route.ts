@@ -12,14 +12,14 @@ const createRoomSchema = z.object({
   provider: z.enum(["youtube", "html5"]).default("youtube"),
 });
 
-// Simple in-memory rate limiter: max 5 rooms per user per minute.
-const rateLimitMap = new Map<string, { count: number; reset: number }>();
+// In-memory token bucket rate limiter: max 5 room creations per user per hour
+const roomRateLimitMap = new Map<string, { count: number; reset: number }>();
 
-function checkRateLimit(userId: string): boolean {
+function checkRoomCreationRateLimit(userId: string): boolean {
   const now = Date.now();
-  const entry = rateLimitMap.get(userId);
+  const entry = roomRateLimitMap.get(userId);
   if (!entry || entry.reset < now) {
-    rateLimitMap.set(userId, { count: 1, reset: now + 60_000 });
+    roomRateLimitMap.set(userId, { count: 1, reset: now + 3600_000 });
     return true;
   }
   if (entry.count >= 5) return false;
@@ -41,9 +41,9 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!checkRateLimit(user.id)) {
+  if (!checkRoomCreationRateLimit(user.id)) {
     return NextResponse.json(
-      { error: "Rate limit exceeded. Try again in a minute." },
+      { error: "Rate limit exceeded. You may only create up to 5 rooms per hour." },
       { status: 429 }
     );
   }
@@ -52,7 +52,7 @@ export async function POST(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON request body" }, { status: 400 });
   }
 
   const parsed = createRoomSchema.safeParse(body);
@@ -63,18 +63,19 @@ export async function POST(
     );
   }
 
-  const { name, description, visibility, videoUrl, provider } = parsed.data;
+  const { name, visibility, videoUrl, provider } = parsed.data;
+  const isPrivate = visibility === "private";
+  const videoType = provider === "youtube" ? "youtube" : "direct";
 
+  // 1. Insert room into rooms table
   const { data: room, error: insertError } = await supabase
     .from("rooms")
     .insert({
       name,
-      description: description ?? null,
       host_id: user.id,
-      visibility,
+      is_private: isPrivate,
       video_url: videoUrl || null,
-      provider,
-      invite_token: nanoid(16),
+      video_type: videoType,
     })
     .select()
     .single();
@@ -83,15 +84,35 @@ export async function POST(
     return NextResponse.json({ error: "Failed to create room" }, { status: 500 });
   }
 
-  // Auto-add host as a member.
-  await supabase.from("room_members").insert({
+  // 2. Insert host into room_members
+  await supabase.from("room_members").upsert(
+    {
+      room_id: room.id,
+      user_id: user.id,
+      role: "host",
+    },
+    { onConflict: "room_id,user_id" }
+  );
+
+  // 3. Create initial invite token if private room
+  const token = nanoid(24);
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+  await supabase.from("invite_tokens").insert({
     room_id: room.id,
-    user_id: user.id,
-    role: "host",
-    display_name:
-      user.user_metadata?.display_name ?? user.email ?? "Host",
-    avatar_url: user.user_metadata?.avatar_url ?? null,
+    token,
+    created_by: user.id,
+    expires_at: expiresAt,
   });
 
-  return NextResponse.json({ room }, { status: 201 });
+  return NextResponse.json(
+    {
+      room: {
+        ...room,
+        visibility: isPrivate ? "private" : "public",
+        provider: videoType === "youtube" ? "youtube" : "html5",
+        invite_token: token,
+      },
+    },
+    { status: 201 }
+  );
 }
