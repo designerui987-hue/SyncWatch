@@ -10,10 +10,13 @@ export interface Room {
   name: string;
   description: string | null;
   host_id: string;
+  is_private?: boolean;
   visibility: RoomVisibility;
   invite_token: string | null;
   video_url: string | null;
+  video_type?: string;
   provider: VideoProvider;
+  max_members?: number;
   created_at: string;
   updated_at: string;
 }
@@ -24,9 +27,9 @@ export interface RoomMember {
   user_id: string;
   role: UserRole;
   joined_at: string;
-  display_name: string;
-  avatar_url: string | null;
-  is_online: boolean;
+  display_name?: string;
+  avatar_url?: string | null;
+  is_online?: boolean;
 }
 
 export interface Message {
@@ -121,6 +124,7 @@ export interface SocketData {
   userId: string;
   displayName: string;
   avatarUrl: string | null;
+  roomRoles?: Record<string, UserRole>;
 }
 
 // ─── API request / response shapes ───────────────────────────────────────────
@@ -154,4 +158,12 @@ export interface InviteTokenResponse {
 export interface ApiError {
   error: string;
   details?: unknown;
+}
+
+
+declare global {
+  interface Window {
+    YT: any;
+    onYouTubeIframeAPIReady: (() => void) | undefined;
+  }
 }

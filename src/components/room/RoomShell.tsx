@@ -10,8 +10,9 @@ import { useSocket } from "@/hooks/useSocket";
 import { usePlayback } from "@/hooks/usePlayback";
 import { useRoom } from "@/hooks/useRoom";
 import { useChat } from "@/hooks/useChat";
-import { Share2, Video } from "lucide-react";
+import { Share2, Video, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/use-toast";
 import type { Room, RoomMember, UserRole, VideoProvider } from "@/types";
 
 interface RoomShellProps {
@@ -32,6 +33,7 @@ export const RoomShell: React.FC<RoomShellProps> = ({
   initialMembers,
   userRole,
 }) => {
+  const { toast } = useToast();
   const [showMembers, setShowMembers] = useState(false);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [urlInput, setUrlInput] = useState("");
@@ -66,32 +68,58 @@ export const RoomShell: React.FC<RoomShellProps> = ({
 
   const { messages, addMessage } = useChat();
 
-  // Socket connection
-  const { socket, isConnected, emit } = useSocket(currentUser.id);
+  // Socket connection with session token and active room ID
+  const { socket, isConnected, connectionStatus, errorMessage, emit } = useSocket({
+    roomId: room.id,
+  });
 
-  // Setup socket event listeners
+  // Setup socket event listeners with strict cleanup
   useEffect(() => {
     if (!socket) return;
 
-    emit("join-room", {
-      roomId: room.id,
-      token: currentUser.id,
-    });
-
-    socket.on("playback:state", ({ state }) => {
+    const handlePlaybackState = ({ state }: any) => {
       applyServerSync(state);
-    });
+    };
 
-    socket.on("chat:message", (msg) => {
+    const handleChatMessage = (msg: any) => {
       addMessage(msg);
-    });
+    };
 
-    socket.on("member:update", ({ member, event }) => {
+    const handleMemberUpdate = ({ member, event }: any) => {
       updateMember(member, event);
-    });
-  }, [socket, room.id, currentUser.id, emit, applyServerSync, addMessage, updateMember]);
+    };
+
+    const handleRoomError = (err: { code: string; message: string }) => {
+      toast({
+        variant: "destructive",
+        title: "Watch Room Notice",
+        description: err.message,
+      });
+    };
+
+    socket.on("playback:state", handlePlaybackState);
+    socket.on("chat:message", handleChatMessage);
+    socket.on("member:update", handleMemberUpdate);
+    socket.on("room:error", handleRoomError);
+
+    return () => {
+      socket.off("playback:state", handlePlaybackState);
+      socket.off("chat:message", handleChatMessage);
+      socket.off("member:update", handleMemberUpdate);
+      socket.off("room:error", handleRoomError);
+    };
+  }, [socket, applyServerSync, addMessage, updateMember, toast]);
 
   const handleSendSyncUpdate = (nextPlay: boolean, time: number) => {
+    if (!canControl) {
+      toast({
+        variant: "destructive",
+        title: "Action Restricted",
+        description: "Only the room host or co-host can control playback.",
+      });
+      return;
+    }
+
     handlePlayStateChange(nextPlay, time);
     emit("playback:update", {
       roomId: room.id,
@@ -107,6 +135,8 @@ export const RoomShell: React.FC<RoomShellProps> = ({
   };
 
   const handleSendSeek = (newTime: number) => {
+    if (!canControl) return;
+
     handleSeek(newTime);
     emit("playback:update", {
       roomId: room.id,
@@ -131,16 +161,20 @@ export const RoomShell: React.FC<RoomShellProps> = ({
 
   const handleUpdateVideo = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canControl) return;
+
     const cleanUrl = urlInput.trim();
     if (!cleanUrl) return;
 
-    const detectedProvider: VideoProvider = cleanUrl.includes("youtube.com") || cleanUrl.includes("youtu.be")
-      ? "youtube"
-      : "html5";
+    const detectedProvider: VideoProvider =
+      cleanUrl.includes("youtube.com") || cleanUrl.includes("youtu.be")
+        ? "youtube"
+        : "html5";
 
     setVideoUrl(cleanUrl);
     setProvider(detectedProvider);
     setShowUrlModal(false);
+    setUrlInput("");
 
     emit("playback:update", {
       roomId: room.id,
@@ -170,9 +204,21 @@ export const RoomShell: React.FC<RoomShellProps> = ({
           {/* Action bar */}
           <div className="flex items-center justify-between bg-zinc-900/60 border border-zinc-800/80 px-4 py-2.5 rounded-xl">
             <div className="flex items-center space-x-2">
-              <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
-              <span className="text-xs text-zinc-400">
-                {isConnected ? "Synchronized" : "Connecting..."}
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isConnected
+                    ? "bg-emerald-500"
+                    : connectionStatus === "reconnecting"
+                    ? "bg-amber-500 animate-pulse"
+                    : "bg-red-500"
+                }`}
+              />
+              <span className="text-xs text-zinc-400 capitalize">
+                {connectionStatus === "connected"
+                  ? "Synchronized"
+                  : connectionStatus === "reconnecting"
+                  ? "Reconnecting…"
+                  : connectionStatus}
               </span>
             </div>
 
@@ -208,6 +254,7 @@ export const RoomShell: React.FC<RoomShellProps> = ({
             isPlaying={isPlaying}
             currentTime={currentTime}
             canControl={canControl}
+            isDisconnected={!isConnected}
             onPlayStateChange={handleSendSyncUpdate}
             onSeek={handleSendSeek}
           />
@@ -270,7 +317,11 @@ export const RoomShell: React.FC<RoomShellProps> = ({
                 >
                   Cancel
                 </Button>
-                <Button type="submit" size="sm" className="bg-violet-600 hover:bg-violet-500 text-white text-xs">
+                <Button
+                  type="submit"
+                  size="sm"
+                  className="bg-violet-600 hover:bg-violet-500 text-white text-xs"
+                >
                   Set Video
                 </Button>
               </div>

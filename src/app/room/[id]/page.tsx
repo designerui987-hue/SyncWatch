@@ -1,5 +1,4 @@
 import { notFound, redirect } from "next/navigation";
-import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { RoomShell } from "@/components/room/RoomShell";
 import type { Room, RoomMember, UserRole } from "@/types";
@@ -15,115 +14,117 @@ export async function generateMetadata({ params }: RoomPageProps) {
 }
 
 export default async function RoomPage({ params }: RoomPageProps) {
-  let currentUser: {
-    id: string;
-    email: string;
-    displayName: string;
-    avatarUrl: string | null;
-  } | null = null;
+  const supabase = createClient();
 
-  // 1. Try Supabase Auth
-  try {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    if (user) {
-      currentUser = {
-        id: user.id,
-        email: user.email ?? "",
-        displayName: user.user_metadata?.display_name ?? user.email ?? "Viewer",
-        avatarUrl: user.user_metadata?.avatar_url ?? null,
-      };
-    }
-  } catch {}
+  // 1. Enforce authenticated Supabase user
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
 
-  // 2. Fallback to Local Demo Cookie
-  if (!currentUser) {
-    const cookieStore = cookies();
-    const demoCookie = cookieStore.get("syncwatch_user")?.value;
-    if (demoCookie) {
-      try {
-        const parsed = JSON.parse(decodeURIComponent(demoCookie));
-        currentUser = {
-          id: parsed.id || `usr_${params.id.slice(0, 4)}`,
-          email: parsed.email || "demo@syncwatch.local",
-          displayName: parsed.displayName || "Demo Viewer",
-          avatarUrl: null,
-        };
-      } catch {}
-    }
-  }
-
-  // If still not authenticated, redirect to /auth
-  if (!currentUser) {
+  if (authError || !user) {
     redirect(`/auth?redirectTo=/room/${params.id}`);
   }
 
-  // 3. Fetch Room from DB or Fallback to Ephemeral Room
-  let room: Room | null = null;
-  let members: RoomMember[] = [];
-  let userRole: UserRole = "host";
+  const currentUser = {
+    id: user.id,
+    email: user.email ?? "",
+    displayName:
+      (user.user_metadata?.display_name as string) ||
+      (user.user_metadata?.full_name as string) ||
+      user.email?.split("@")[0] ||
+      "Participant",
+    avatarUrl: (user.user_metadata?.avatar_url as string) || null,
+  };
 
-  try {
-    const supabase = createClient();
-    const { data: dbRoom } = await supabase
-      .from("rooms")
-      .select("*")
-      .eq("id", params.id)
-      .single<Room>();
+  // 2. Fetch Room from Database
+  const { data: room, error: roomError } = await supabase
+    .from("rooms")
+    .select("*")
+    .eq("id", params.id)
+    .single<Room>();
 
-    if (dbRoom) {
-      room = dbRoom;
-      const { data: dbMembers } = await supabase
-        .from("room_members")
-        .select("*")
-        .eq("room_id", params.id)
-        .returns<RoomMember[]>();
-
-      if (dbMembers) {
-        members = dbMembers;
-        const membership = dbMembers.find((m) => m.user_id === currentUser?.id);
-        if (membership) {
-          userRole = membership.role;
-        }
-      }
-    }
-  } catch {}
-
-  // Fallback in-memory room for local dev testing
-  if (!room) {
-    room = {
+  // Development-only test fixture check (disabled in production)
+  if ((roomError || !room) && process.env.NODE_ENV === "development" && params.id.startsWith("dev-test-")) {
+    const fixtureRoom: Room = {
       id: params.id,
-      name: `Party Room #${params.id.slice(0, 6)}`,
-      description: "Local watch party room",
-      host_id: currentUser.id,
+      name: `Dev Test Room`,
+      description: "Development fixture",
+      host_id: user.id,
       visibility: "public",
-      invite_token: `inv_${params.id}`,
+      invite_token: null,
       video_url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
       provider: "youtube",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-
-    members = [
-      {
-        id: `mem_${currentUser.id}`,
-        room_id: params.id,
-        user_id: currentUser.id,
-        role: "host",
-        joined_at: new Date().toISOString(),
-        display_name: currentUser.displayName,
-        avatar_url: currentUser.avatarUrl,
-        is_online: true,
-      },
-    ];
-    userRole = "host";
+    return (
+      <RoomShell
+        room={fixtureRoom}
+        currentUser={currentUser}
+        initialMembers={[
+          {
+            id: `mem_${user.id}`,
+            room_id: params.id,
+            user_id: user.id,
+            role: "host",
+            joined_at: new Date().toISOString(),
+            display_name: currentUser.displayName,
+            avatar_url: currentUser.avatarUrl,
+            is_online: true,
+          },
+        ]}
+        userRole="host"
+      />
+    );
   }
+
+  if (roomError || !room) {
+    notFound();
+  }
+
+  // 3. Verify Membership and Permissions
+  const { data: membership } = await supabase
+    .from("room_members")
+    .select("*")
+    .eq("room_id", params.id)
+    .eq("user_id", user.id)
+    .single<RoomMember>();
+
+  const isHost = room.host_id === user.id;
+  const isPrivate = room.is_private ?? (room.visibility === "private");
+
+  // If private room and not host or registered member, block access
+  if (isPrivate && !isHost && !membership) {
+    redirect(`/invite?room=${params.id}&error=access_denied`);
+  }
+
+  // If public room and not yet joined, register as viewer
+  let userRole: UserRole = isHost ? "host" : (membership?.role ?? "viewer");
+  if (!membership && !isHost) {
+    await supabase.from("room_members").upsert(
+      {
+        room_id: params.id,
+        user_id: user.id,
+        role: "viewer",
+      },
+      { onConflict: "room_id,user_id", ignoreDuplicates: true }
+    );
+    userRole = "viewer";
+  }
+
+  // 4. Fetch Active Room Members
+  const { data: members } = await supabase
+    .from("room_members")
+    .select("*")
+    .eq("room_id", params.id)
+    .returns<RoomMember[]>();
 
   return (
     <RoomShell
       room={room}
       currentUser={currentUser}
-      initialMembers={members}
+      initialMembers={members ?? []}
       userRole={userRole}
     />
   );
