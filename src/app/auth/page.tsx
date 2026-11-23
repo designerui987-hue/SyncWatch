@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/components/ui/use-toast";
 import { safeRedirectUrl } from "@/lib/auth-redirect";
-import { Loader2, Mail, Play, ShieldCheck } from "lucide-react";
+import { Loader2, Mail, Play, ShieldCheck, Zap } from "lucide-react";
 import Link from "next/link";
 
 function AuthForm() {
@@ -25,6 +25,7 @@ function AuthForm() {
   const redirectTo = safeRedirectUrl(searchParams.get("redirectTo"));
 
   const [email, setEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
 
@@ -36,7 +37,34 @@ function AuthForm() {
         if (data?.user) router.replace(redirectTo);
       }).catch(() => {});
     } catch {}
+
+    // Check if demo user cookie exists in development
+    const match = document.cookie.match(/syncwatch_user=([^;]+)/);
+    if (match) {
+      router.replace(redirectTo);
+    }
   }, [redirectTo, router]);
+
+  const handleDemoSignIn = (chosenName?: string) => {
+    const finalName = chosenName || displayName.trim() || email.split("@")[0] || "Host User";
+    const demoId = `dev-user-${Math.random().toString(36).substring(2, 9)}`;
+    const userData = {
+      id: demoId,
+      email: email.trim() || `${demoId}@syncwatch.local`,
+      displayName: finalName,
+      accessToken: demoId,
+    };
+
+    document.cookie = `syncwatch_user=${encodeURIComponent(JSON.stringify(userData))}; path=/; max-age=604800`;
+    localStorage.setItem("syncwatch_user", JSON.stringify(userData));
+
+    toast({
+      title: "Signed In (Development Mode)",
+      description: `Welcome to SyncWatch, ${finalName}!`,
+    });
+
+    router.replace(redirectTo);
+  };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -152,8 +180,37 @@ function AuthForm() {
           </Button>
         </form>
 
+        {/* Development Mode: Instant Sign-In */}
+        {process.env.NODE_ENV === "development" && (
+          <div className="pt-3 border-t border-zinc-800 space-y-2.5">
+            <div className="flex items-center space-x-1.5 text-amber-400 text-xs font-semibold">
+              <Zap className="w-3.5 h-3.5" />
+              <span>Development Mode: Instant Local Sign-In</span>
+            </div>
+            <p className="text-[11px] text-zinc-400 leading-relaxed">
+              Supabase cluster offline? Enter your nickname to immediately test watch rooms, chat, and playback synchronization locally.
+            </p>
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                placeholder="Your name (e.g. Alex)"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="bg-zinc-950 border-zinc-800 text-xs text-zinc-100 h-8"
+              />
+              <Button
+                type="button"
+                onClick={() => handleDemoSignIn()}
+                className="bg-amber-600 hover:bg-amber-500 text-white text-xs h-8 px-3 shrink-0"
+              >
+                Sign In
+              </Button>
+            </div>
+          </div>
+        )}
+
         <p className="text-center text-[11px] text-zinc-500 pt-2">
-          Protected by Supabase Auth and Row-Level Security.
+          Protected by Supabase Auth and Row-Level Security in production.
         </p>
       </CardContent>
     </Card>

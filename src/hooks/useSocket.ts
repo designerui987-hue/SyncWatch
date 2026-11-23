@@ -47,6 +47,17 @@ export function useSocket(options?: UseSocketOptions | string) {
         }
       }
 
+      // Check development localStorage user if no session token
+      if (!token && typeof window !== "undefined") {
+        try {
+          const stored = localStorage.getItem("syncwatch_user");
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            token = parsed.accessToken || parsed.id;
+          }
+        } catch {}
+      }
+
       currentTokenRef.current = token;
 
       if (!token) {

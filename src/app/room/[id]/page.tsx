@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { RoomShell } from "@/components/room/RoomShell";
 import type { Room, RoomMember, UserRole } from "@/types";
@@ -16,13 +17,32 @@ export async function generateMetadata({ params }: RoomPageProps) {
 export default async function RoomPage({ params }: RoomPageProps) {
   const supabase = createClient();
 
-  // 1. Enforce authenticated Supabase user
+  // 1. Enforce authenticated Supabase user (or local dev user in development)
   const {
-    data: { user },
+    data: { user: supabaseUser },
     error: authError,
   } = await supabase.auth.getUser();
 
-  if (authError || !user) {
+  let user = supabaseUser;
+
+  if (!user && process.env.NODE_ENV === "development") {
+    const cookieStore = cookies();
+    const demoCookie = cookieStore.get("syncwatch_user")?.value;
+    if (demoCookie) {
+      try {
+        const parsed = JSON.parse(decodeURIComponent(demoCookie));
+        user = {
+          id: parsed.id,
+          email: parsed.email,
+          user_metadata: {
+            display_name: parsed.displayName,
+          },
+        } as any;
+      } catch {}
+    }
+  }
+
+  if (!user) {
     redirect(`/auth?redirectTo=/room/${params.id}`);
   }
 
@@ -45,10 +65,10 @@ export default async function RoomPage({ params }: RoomPageProps) {
     .single<Room>();
 
   // Development-only test fixture check (disabled in production)
-  if ((roomError || !room) && process.env.NODE_ENV === "development" && params.id.startsWith("dev-test-")) {
+  if ((roomError || !room) && process.env.NODE_ENV === "development") {
     const fixtureRoom: Room = {
       id: params.id,
-      name: `Dev Test Room`,
+      name: `Watch Room (${params.id.slice(0, 8)})`,
       description: "Development fixture",
       host_id: user.id,
       visibility: "public",

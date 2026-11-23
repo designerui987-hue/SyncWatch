@@ -8,6 +8,13 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
   // Protect /room/* routes – require an authenticated session
   if (request.nextUrl.pathname.startsWith("/room/")) {
+    if (process.env.NODE_ENV === "development") {
+      const demoUser = request.cookies.get("syncwatch_user")?.value;
+      if (demoUser) {
+        return response;
+      }
+    }
+
     try {
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL || "http://localhost:54321";
       const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "dummy-anon-key";

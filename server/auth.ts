@@ -41,6 +41,20 @@ export async function verifyUserToken(token: string): Promise<VerifiedUser | nul
     };
   }
 
+  // Development-only local dev user token (never enabled in production)
+  if (
+    process.env.NODE_ENV === "development" &&
+    (token.startsWith("dev-user-") || token.startsWith("usr_"))
+  ) {
+    const id = token;
+    return {
+      id,
+      email: `${id}@syncwatch.local`,
+      displayName: `Watcher ${id.slice(-4)}`,
+      avatarUrl: null,
+    };
+  }
+
   try {
     const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
     if (error || !user) {
